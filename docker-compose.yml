@@ -1,0 +1,54 @@
+# ===== Eg-Money Production Docker Compose =====
+# Usage:
+#   docker compose up -d              # start
+#   docker compose logs -f            # view logs
+#   docker compose down               # stop
+#
+# Requirements:
+#   - Create a .env file with the required variables (see .env.example)
+#   - The SQLite database is persisted in a named volume (eg-money-db)
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # Set this to your production domain for correct sitemap/OG URLs
+        NEXT_PUBLIC_BASE_URL: ${NEXT_PUBLIC_BASE_URL:-https://eg-money.com}
+    container_name: eg-money-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"   # Next.js app (public)
+      # SECURITY: 3003 (WebSocket) and 3004 (internal HTTP) are NOT exposed to the host.
+      # The Next.js app talks to them via localhost inside the container.
+      # If you need public WebSocket access, expose 3003 explicitly via Caddy
+      # (which already proxies through port 81 / 443 in production).
+      # 3004 should NEVER be exposed — it's the unauthenticated internal push API
+      # (notifications, balance updates, p2p events).
+    env_file:
+      - .env
+    volumes:
+      # Persist SQLite database across container restarts
+      - eg-money-db:/app/db
+      # Persist uploaded files (receipts, etc.) — stored OUTSIDE /public/
+      # for PII security; served via authenticated /api/uploads/* routes
+      - eg-money-uploads:/app/uploads
+    networks:
+      - eg-money-net
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  eg-money-db:
+    driver: local
+  eg-money-uploads:
+    driver: local
+
+networks:
+  eg-money-net:
+    driver: bridge

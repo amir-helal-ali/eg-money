@@ -1,0 +1,57 @@
+# ===== Eg-Money .dockerignore =====
+# Reduces Docker build context size for faster builds.
+
+# Dependencies (will be installed inside the container)
+node_modules/
+mini-services/*/node_modules/
+
+# Next.js build output
+.next/
+out/
+
+# Database (SQLite — never bake into image)
+db/
+*.db
+*.db-journal
+
+# Environment files (passed via docker-compose env_file)
+.env
+.env.local
+.env.*.local
+
+# Git
+.git/
+.gitignore
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+dev.log
+.zscripts/
+
+# Downloads + uploads
+download/
+upload/
+
+# Skills (internal tooling, not part of the app)
+skills/
+
+# Build artifacts
+tsconfig.tsbuildinfo
+
+# Misc (keep DOCKER.md for documentation in the repo, but don't bake into image)
+README.md

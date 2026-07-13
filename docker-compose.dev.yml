@@ -1,0 +1,51 @@
+# ===== Eg-Money Development Docker Compose =====
+# Usage:
+#   docker compose -f docker-compose.dev.yml up     # start with hot reload
+#   docker compose -f docker-compose.dev.yml down   # stop
+#
+# The app is available at http://localhost:3000 with Turbopack hot reload.
+# Source code changes reflect instantly (mounted as volume).
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: eg-money-dev
+    restart: unless-stopped
+    ports:
+      - "3000:3000"   # Next.js dev server
+      - "3003:3003"   # Ticker WebSocket
+      - "3004:3004"   # Ticker HTTP
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=file:/app/db/custom.db
+      - NEXT_TELEMETRY_DISABLED=1
+      # Pass through these from .env if they exist
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - SMTP_FROM=${SMTP_FROM:-no-reply@eg-money.com}
+      - NEXT_PUBLIC_VAPID_PUBLIC_KEY=${NEXT_PUBLIC_VAPID_PUBLIC_KEY:-}
+      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY:-}
+      - VAPID_SUBJECT=${VAPID_SUBJECT:-mailto:admin@eg-money.com}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - ENABLE_GOOGLE_OAUTH=${ENABLE_GOOGLE_OAUTH:-false}
+      - CRON_SECRET=${CRON_SECRET:-}
+    volumes:
+      # Mount source code for hot reload
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+      # Preserve ticker-service deps (socket.io) across volume mount
+      - /app/mini-services/ticker-service/node_modules
+      - eg-money-dev-db:/app/db
+    command: sh -c "npx prisma generate && npx prisma db push --accept-data-loss && (npx tsx mini-services/ticker-service/index.ts &) && npm run dev"
+    stdin_open: true
+    tty: true
+
+volumes:
+  eg-money-dev-db:
+    driver: local

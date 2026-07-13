@@ -1,0 +1,3 @@
+{
+  "/api/price-alerts/check/route": "app/api/price-alerts/check/route.js"
+}

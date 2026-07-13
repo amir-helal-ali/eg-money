@@ -1,0 +1,487 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique // unique username for login
+  username      String   @unique // unique username for login
+  name          String?
+  phone         String?  // full international phone (e.g. +201012345678)
+  countryCode   String? // e.g. "+20"
+  passwordHash  String?
+  role          String   @default("USER") // USER | ADMIN
+  egpBalance    Decimal  @default(0)
+  usdtBalance   Decimal  @default(0)
+  status        String   @default("ACTIVE") // ACTIVE | SUSPENDED
+  referralCode  String   @unique // unique referral code per user
+  referredById  String?  // user who referred this one
+  resetToken    String?  // password reset token (post-OTP verification)
+  resetExpires  DateTime? // password reset expiry
+  // OTP for forgot-password flow
+  otpCode       String?
+  otpChannel    String?  // EMAIL | PHONE
+  otpExpires    DateTime?
+  // OTP attempt tracking (brute-force protection)
+  otpAttempts   Int      @default(0)
+  // 2FA / TOTP (Time-based One-Time Password) for high-value accounts
+  // When enabled, login requires a 6-digit code from an authenticator app
+  // (Google Authenticator, Authy, etc.) in addition to the password.
+  totpSecret    String?  // base32-encoded secret (encrypted at rest ideally)
+  totpEnabled   Boolean  @default(false)
+  totpBackupCodes String? // JSON array of hashed backup codes (for recovery)
+  // Verification flags
+  emailVerified Boolean  @default(false)
+  phoneVerified Boolean  @default(false)
+  // Google OAuth
+  googleId      String?  @unique
+  googleEmail   String?
+  googleName    String?
+  googleAvatar  String?
+  lastLoginAt   DateTime?
+  // P2P reputation
+  p2pTradesCount Int     @default(0)
+  p2pRatingSum   Int     @default(0)
+  p2pRatingCount Int     @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  deposits       Deposit[]
+  withdrawals    Withdrawal[]
+  trades         Trade[]
+  p2pOffers      P2pOffer[]
+  p2pTradesAsBuyer   P2pTrade[] @relation("P2pTrade_Buyer")
+  p2pTradesAsSeller  P2pTrade[] @relation("P2pTrade_Seller")
+  p2pMessagesSent P2pMessage[] @relation("P2pMessage_Sender")
+  p2pReviewsGiven P2pReview[] @relation("P2pReview_Reviewer")
+  p2pReviewsReceived P2pReview[] @relation("P2pReview_Reviewed")
+  p2pDisputesOpened P2pDispute[] @relation("P2pDispute_Opener")
+  p2pDisputesResolved P2pDispute[] @relation("P2pDispute_Resolver")
+  transactions   Transaction[]
+  notifications  Notification[]
+  priceAlerts    PriceAlert[]
+  referralsMade  Referral[] @relation("Referrer")
+  referralsReceived Referral[] @relation("Referred")
+  loginHistory   LoginEvent[]
+  settings       UserSettings?
+  wsTokens       WsToken[]
+  sessions       Session[]
+}
+
+// Persistent session store (replaces the in-memory Map).
+// SECURITY: In-memory Map sessions break multi-instance deployments and are
+// lost on every restart. DB-backed sessions survive restarts and work across
+// multiple server instances (e.g., behind a load balancer).
+// A SHA-256 hash of the token is stored — never the raw token — so a DB-only
+// attacker can't hijack sessions.
+model Session {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // SHA-256 hash of the session token. The raw token is never stored.
+  tokenHash   String   @unique
+  // Client info for session binding + audit
+  ipAddress   String?
+  userAgent   String?
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+  lastUsedAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// Login / security audit trail
+model LoginEvent {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // LOGIN | LOGOUT | FAILED_LOGIN | PASSWORD_RESET | EMAIL_VERIFIED | PHONE_VERIFIED | SESSION_TOKEN_ISSUED
+  eventType     String
+  // Success / failure status
+  success       Boolean  @default(true)
+  // Failure reason (when success=false): WRONG_PASSWORD | USER_NOT_FOUND | SUSPENDED | EXPIRED_OTP | RATE_LIMITED
+  failureReason String?
+  // Client info
+  ipAddress     String?
+  userAgent     String?
+  // Location (best-effort from IP — null if unknown)
+  country       String?
+  city          String?
+  // Session info (so we can show "currently active" sessions)
+  sessionToken  String?  // partial hash for matching, null for failed logins
+  // Optional metadata
+  metadata      String?  // JSON string
+  createdAt     DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([eventType])
+}
+
+// Short-lived WebSocket auth token (separate from session cookie)
+// Issued by /api/notifications/ws-token so the client can authenticate to the
+// ticker-service WebSocket without exposing the httpOnly session cookie.
+// One-time use: the ticker-service exchanges it for a userId then discards it.
+model WsToken {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token       String   @unique
+  // SHA-256 hash of the token for constant-time lookup on verify
+  tokenHash   String   @unique
+  expiresAt   DateTime
+  used        Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model UserSettings {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  language     String   @default("ar")
+  // Master switches
+  notifyEmail  Boolean  @default(true)
+  notifyPush   Boolean  @default(true)
+  // Granular email preferences
+  emailSecurity    Boolean @default(true) // login alerts, password changes
+  emailDeposits    Boolean @default(true) // deposit approved/rejected
+  emailWithdrawals Boolean @default(true) // withdrawal processed/rejected
+  emailP2p         Boolean @default(true) // P2P trade events, disputes
+  emailMarketing   Boolean @default(false) // newsletters, promotions
+  // Granular push preferences
+  pushSecurity    Boolean @default(true)
+  pushDeposits    Boolean @default(true)
+  pushWithdrawals Boolean @default(true)
+  pushP2p         Boolean @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Settings {
+  // Singleton — fixed id so there's only ever one row.
+  id              String   @id @default("singleton")
+  buyPriceEgp     Decimal  @default(48.5)
+  sellPriceEgp    Decimal  @default(47.8)
+  minTradeEgp     Decimal  @default(100)
+  maxTradeEgp     Decimal  @default(500000)
+  minP2pEgp       Decimal  @default(50)
+  maxP2pEgp       Decimal  @default(1000000)
+  p2pFeePercent   Decimal  @default(0.3)
+  platformFeePercent Decimal @default(1.5)
+  // Google OAuth admin-managed config
+  googleOAuthEnabled  Boolean @default(false)
+  googleClientId      String?
+  googleClientSecret  String?
+  // Verification enforcement
+  requireEmailVerification Boolean @default(true)
+  requirePhoneVerification Boolean @default(true)
+  // Deposit daily/monthly limits per payment number
+  depositDailyLimitEgp   Decimal @default(60000)
+  depositMonthlyLimitEgp Decimal @default(200000)
+  // ===== Configurable magic numbers (P2-6) =====
+  // Previously hardcoded across multiple files — now admin-configurable.
+  minDepositEgp          Decimal @default(100)   // /api/deposits + /api/deposits/create
+  minWithdrawalEgp       Decimal @default(100)   // /api/withdrawals
+  p2pPaymentTimeoutMin   Int     @default(30)    // P2P trade auto-cancel timeout
+  p2pMessageEditWindowSec Int    @default(300)   // 5 min edit window for P2P messages
+  referralRewardEgp      Decimal @default(50)    // referral completion reward
+  otpMaxAttempts         Int     @default(5)     // max wrong OTP guesses before invalidation
+  otpTtlSec              Int     @default(600)   // 10 min OTP expiry
+  sessionTtlSec          Int     @default(604800) // 7 days session expiry
+  wsTokenTtlSec          Int     @default(60)    // 60 sec WS auth token expiry
+  updatedAt       DateTime @updatedAt
+}
+
+model Deposit {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  amountEgp     Decimal
+  method        String   // VODAFONE_CASH | INSTAPAY | FAWRY | BANK_TRANSFER
+  reference     String?
+  // Smart deposit fields
+  assignedWalletId String?  // PaymentWallet assigned to this deposit
+  senderNumber  String?   // phone number the user sent from
+  receiptImage  String?   // URL/path to uploaded receipt image
+  currency      String   @default("EGP") // EGP | USDT
+  status        String   @default("PENDING") // PENDING | PENDING_PAYMENT | APPROVED | REJECTED
+  adminNote     String?
+  processedById String?
+  processedAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@index([status, processedAt])
+}
+
+// Admin-managed payment wallets (phone numbers for Vodafone Cash, InstaPay, etc.)
+// The system auto-assigns these to deposits based on daily/monthly limits
+model PaymentWallet {
+  id            String   @id @default(cuid())
+  method        String   // VODAFONE_CASH | INSTAPAY | FAWRY | BANK_TRANSFER
+  number        String   // the phone number / account number
+  holderName    String?  // name on the account
+  label         String?  // display label (e.g. "محفظة 1")
+  active        Boolean  @default(true)
+  sortOrder     Int      @default(0)
+  // Daily/monthly tracking (resets via cron or on first use of the day)
+  todayTotalEgp Decimal  @default(0)
+  monthTotalEgp Decimal  @default(0)
+  lastResetDate DateTime?  // date of last daily reset
+  lastResetMonth DateTime? // month of last monthly reset
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Prevent duplicate wallets for the same method + number
+  @@unique([method, number])
+  @@index([method, active])
+}
+
+model Withdrawal {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  amountEgp     Decimal
+  method        String   // VODAFONE_CASH | INSTAPAY | FAWRY | BANK_TRANSFER
+  destination   String
+  status        String   @default("PENDING") // PENDING | APPROVED | REJECTED
+  adminNote     String?
+  processedById String?
+  processedAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
+
+model Trade {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  type          String   // BUY | SELL
+  usdtAmount    Decimal
+  egpAmount     Decimal
+  priceEgp      Decimal
+  feeEgp        Decimal  @default(0)
+  status        String   @default("COMPLETED")
+  createdAt     DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model P2pOffer {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  type          String   // BUY | SELL
+  usdtAmount    Decimal
+  priceEgp      Decimal
+  minOrderEgp   Decimal  @default(50)
+  maxOrderEgp   Decimal  @default(100000)
+  paymentMethods String
+  status        String   @default("ACTIVE")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  p2pTrades     P2pTrade[]
+
+  @@index([userId, status])
+  @@index([status, createdAt])
+  @@index([type, status])
+}
+
+model P2pTrade {
+  id            String   @id @default(cuid())
+  offerId       String
+  offer         P2pOffer @relation(fields: [offerId], references: [id], onDelete: Restrict)
+  buyerId       String
+  buyer         User     @relation("P2pTrade_Buyer", fields: [buyerId], references: [id], onDelete: Restrict)
+  sellerId      String
+  seller        User     @relation("P2pTrade_Seller", fields: [sellerId], references: [id], onDelete: Restrict)
+  usdtAmount    Decimal
+  egpAmount     Decimal
+  priceEgp      Decimal
+  feeEgp        Decimal  @default(0)
+  paymentMethod String
+  paymentReference String?
+  status        String   @default("PENDING_PAYMENT")
+  escrowUsdt    Decimal  @default(0)
+  // Lifecycle timestamps
+  paymentDeadline DateTime? // 30 min from creation for payment
+  paidAt        DateTime?
+  releasedAt    DateTime?
+  cancelledAt   DateTime?
+  disputedAt    DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  messages      P2pMessage[]
+  reviews       P2pReview[]
+  disputes      P2pDispute[]
+
+  @@index([buyerId, status])
+  @@index([sellerId, status])
+  @@index([offerId])
+  @@index([status, createdAt])
+}
+
+// P2P chat messages between buyer, seller, and admin (when disputed)
+model P2pMessage {
+  id            String   @id @default(cuid())
+  tradeId       String
+  trade         P2pTrade @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+  senderId      String
+  sender        User     @relation("P2pMessage_Sender", fields: [senderId], references: [id], onDelete: Cascade)
+  message       String
+  attachmentUrl String?  // optional uploaded receipt/screenshot
+  // Professional chat features
+  senderRole    String   @default("USER") // USER | ADMIN | SYSTEM
+  isSystem      Boolean  @default(false) // system-generated lifecycle messages
+  isEdited      Boolean  @default(false)
+  editedAt      DateTime?
+  isDeleted     Boolean  @default(false) // soft delete (sender can delete own message)
+  deletedAt     DateTime?
+  readByBuyer   Boolean  @default(false) // buyer has seen this message
+  readBySeller  Boolean  @default(false) // seller has seen this message
+  readByAdmin   Boolean  @default(false) // admin has seen this message
+  readAt        DateTime? // first read timestamp (for read receipts)
+  createdAt     DateTime @default(now())
+
+  @@index([tradeId, createdAt])
+  @@index([senderId])
+}
+
+// P2P post-trade review/rating
+model P2pReview {
+  id            String   @id @default(cuid())
+  tradeId       String
+  trade         P2pTrade @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+  reviewerId    String   // who wrote the review
+  reviewer      User     @relation("P2pReview_Reviewer", fields: [reviewerId], references: [id], onDelete: Cascade)
+  reviewedId    String   // who received the review
+  reviewed      User     @relation("P2pReview_Reviewed", fields: [reviewedId], references: [id], onDelete: Cascade)
+  rating        Int      // 1-5 stars
+  comment       String?
+  createdAt     DateTime @default(now())
+
+  @@unique([tradeId, reviewerId]) // one review per reviewer per trade
+  @@index([reviewedId])
+}
+
+// P2P dispute — opened when buyer/seller escalates a stuck trade to admin
+model P2pDispute {
+  id            String   @id @default(cuid())
+  tradeId       String
+  trade         P2pTrade @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+  openedById    String   // who opened the dispute
+  openedBy      User     @relation("P2pDispute_Opener", fields: [openedById], references: [id], onDelete: Cascade)
+  reason        String   // short reason code: NO_PAYMENT | NO_RELEASE | OTHER
+  description   String   // detailed description from the opener
+  status        String   @default("OPEN") // OPEN | UNDER_REVIEW | RESOLVED_BUYER | RESOLVED_SELLER | CANCELLED
+  // Admin resolution
+  resolvedById  String?  // admin who resolved
+  resolvedBy    User?    @relation("P2pDispute_Resolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  resolution    String?  // admin's notes
+  resolvedAt    DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([status])
+  @@index([tradeId])
+}
+
+model Transaction {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  type          String   // DEPOSIT | WITHDRAWAL | TRADE | P2P_TRADE | FEE | REFERRAL
+  direction     String   // CREDIT | DEBIT
+  currency      String   // EGP | USDT
+  amount        Decimal
+  balanceAfter  Decimal
+  description   String
+  referenceId   String?
+  referenceType String?
+  createdAt     DateTime @default(now())
+
+  // Heavy-queried: user's transaction list (cursor pagination on createdAt),
+  // and stats aggregation by type/direction/currency.
+  @@index([userId, createdAt])
+  @@index([referenceType, referenceId])
+}
+
+model Notification {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        String   // PRICE | TRADE | SECURITY | SYSTEM | PROMO | DEPOSIT | WITHDRAWAL | P2P
+  title       String
+  message     String
+  read        Boolean  @default(false)
+  metadata    String?  // JSON string for extra data (amount, price, etc.)
+  createdAt   DateTime @default(now())
+
+  @@index([userId, read, createdAt])
+  @@index([userId, createdAt])
+}
+
+model PriceAlert {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  condition   String   // ABOVE | BELOW
+  targetPrice Decimal
+  currentPrice Decimal @default(0)
+  status      String   @default("ACTIVE") // ACTIVE | TRIGGERED | CANCELLED
+  createdAt   DateTime @default(now())
+  triggeredAt DateTime?
+
+  @@index([userId, status])
+  @@index([status])
+}
+
+model Referral {
+  id          String   @id @default(cuid())
+  referrerId  String
+  referrer    User     @relation("Referrer", fields: [referrerId], references: [id], onDelete: Cascade)
+  referredId  String
+  referred    User     @relation("Referred", fields: [referredId], references: [id], onDelete: Cascade)
+  code        String   @unique
+  status      String   @default("PENDING") // PENDING | COMPLETED | REWARDED
+  rewardEgp   Decimal  @default(0)
+  createdAt   DateTime @default(now())
+  completedAt DateTime?
+
+  // One referrer per referred user (prevents abuse)
+  @@unique([referredId])
+  @@index([referrerId, status])
+}
+
+model PaymentMethod {
+  id          String   @id @default(cuid())
+  name        String
+  nameAr      String
+  icon        String   // emoji or short text
+  logoUrl     String?  // optional image URL
+  type        String   // WALLET | BANK | CARD
+  active      Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([active, sortOrder])
+}

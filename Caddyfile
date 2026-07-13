@@ -1,0 +1,14 @@
+:81 {
+        # Reverse proxy to the Next.js app only.
+        # SECURITY: Do NOT add a dynamic-port handler (e.g. XTransformPort) here —
+        # that pattern is an SSRF that lets any client reach arbitrary internal
+        # services (Postgres, Redis, internal admin APIs, etc.).
+        # If you need to expose another service, add an explicit `handle` block
+        # for it with a hard-coded port.
+        reverse_proxy localhost:3000 {
+                header_up Host {host}
+                header_up X-Forwarded-For {remote_host}
+                header_up X-Forwarded-Proto {scheme}
+                header_up X-Real-IP {remote_host}
+        }
+}

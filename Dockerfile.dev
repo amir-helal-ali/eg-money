@@ -1,0 +1,32 @@
+# ===== Eg-Money Development Dockerfile =====
+# Single-stage image with hot reload, mounted volumes, and dev tooling.
+#
+# Build:  docker compose -f docker-compose.dev.yml build
+# Run:    docker compose -f docker-compose.dev.yml up
+#
+# The app runs on http://localhost:3000 with Turbopack hot reload.
+# The ticker-service runs on ports 3003 (WebSocket) + 3004 (HTTP).
+# Source code is mounted as a volume — changes reflect instantly.
+
+FROM node:20-alpine
+RUN apk add --no-cache libc6-compat python3 make g++
+
+WORKDIR /app
+
+# Copy package files and install ALL deps (including dev)
+COPY package.json package-lock.json* ./
+RUN npm ci || npm install
+
+# Copy the ticker-service and install its deps
+COPY mini-services/ticker-service/package.json ./mini-services/ticker-service/
+RUN cd mini-services/ticker-service && npm install
+
+# Generate Prisma client
+COPY prisma ./prisma
+RUN npx prisma generate
+
+# Expose ports: Next.js + ticker WebSocket + ticker HTTP
+EXPOSE 3000 3003 3004
+
+# The actual command is set in docker-compose.dev.yml via volumes + command
+CMD ["npm", "run", "dev"]

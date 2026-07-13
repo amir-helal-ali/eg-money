@@ -1,0 +1,3 @@
+{
+  "/api/auth/update-phone/route": "app/api/auth/update-phone/route.js"
+}

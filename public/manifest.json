@@ -1,0 +1,83 @@
+{
+  "name": "Eg-Money — تداول USDT بالجنيه المصري",
+  "short_name": "Eg-Money",
+  "description": "منصة مصرية متكاملة لبيع وشراء USDT مقابل الجنيه المصري، بأسعار السوق الحية ونظام ضمان Escrow وأمان مصرفي.",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0a0a0a",
+  "theme_color": "#10b981",
+  "categories": ["finance", "business", "productivity"],
+  "icons": [
+    {
+      "src": "/brand/favicon-16.png",
+      "sizes": "16x16",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/brand/favicon-32.png",
+      "sizes": "32x32",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/brand/favicon-64.png",
+      "sizes": "64x64",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/brand/favicon-128.png",
+      "sizes": "128x128",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/brand/favicon-256.png",
+      "sizes": "256x256",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/brand/favicon-256.png",
+      "sizes": "256x256",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/brand/favicon-128.png",
+      "sizes": "128x128",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "تداول مباشر",
+      "short_name": "تداول",
+      "description": "شراء وبيع USDT فوراً بأسعار السوق",
+      "url": "/?tab=trade",
+      "icons": [{ "src": "/brand/favicon-128.png", "sizes": "128x128" }]
+    },
+    {
+      "name": "سوق P2P",
+      "short_name": "P2P",
+      "description": "تداول بين المستخدمين بنظام ضمان Escrow",
+      "url": "/?tab=p2p",
+      "icons": [{ "src": "/brand/favicon-128.png", "sizes": "128x128" }]
+    },
+    {
+      "name": "المحفظة",
+      "short_name": "محفظة",
+      "description": "إيداع وسحب الأموال",
+      "url": "/?tab=wallet",
+      "icons": [{ "src": "/brand/favicon-128.png", "sizes": "128x128" }]
+    }
+  ],
+  "screenshots": [],
+  "prefer_related_applications": false
+}

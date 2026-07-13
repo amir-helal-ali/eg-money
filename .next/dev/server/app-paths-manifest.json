@@ -1,0 +1,5 @@
+{
+  "/api/p2p/cleanup-expired/route": "app/api/p2p/cleanup-expired/route.js",
+  "/api/price-alerts/check/route": "app/api/price-alerts/check/route.js",
+  "/page": "app/page.js"
+}
