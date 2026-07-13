@@ -1,3 +1,0 @@
-module.exports=[66674,t=>{"use strict";async function e(t,e){try{await fetch("http://localhost:3004/p2p-event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({userId:t,event:{timestamp:Date.now(),...e}})})}catch{}}async function n(t,n){for(let o of t)await e(o,n)}t.s(["pushP2pEvent",()=>e,"pushP2pEvents",()=>n])}];
-
-//# sourceMappingURL=src_lib_p2p-events_ts_be8c68f2._.js.map
